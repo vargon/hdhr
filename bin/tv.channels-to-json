@@ -1,0 +1,110 @@
+#!/bin/bash
+
+TV=hdhomerun_config
+
+. tv.config
+
+function usage() {
+    echo "$0 [options]"
+    echo ""
+    echo "-d | --device [device-id]    The HDHomerun device ID (hdhomerun_config discover)"
+    echo "-g | --generate              Generate a channels file"
+    echo "-f | --file [file-name]      The channels file to use if not generating one"
+}
+
+GENERATE_FILE=0
+
+while [ "$1" != "" ]
+do
+    case $1 in
+        -d | --device )
+            shift
+            BOX=$1
+            ;;
+        -g | --generate )
+            GENERATE_FILE=1
+            ;;
+        -f | --file )
+            shift
+            CHANNELFILE=$1
+            ;;
+        -h | --help)
+            usage
+            exit 0
+            ;;
+        * )
+            echo "Unknown argument: $1"
+            exit 1
+    esac
+    shift
+done
+
+BOX=${BOX-$BOX0}
+
+OUTPUTFILE=stream.m3u8
+
+CHANNELFILE=${CHANNELFILE-/tmp/scan_${BOX}_tuner0.log}
+
+if [ $GENERATE_FILE == 1 ]
+then
+    $TV $BOX scan /tuner0 $CHANNELFILE
+fi
+
+if [ ! -f "$CHANNELFILE" ]
+then
+    echo "No channel file exists! [$CHANNELFILE]"
+    exit 1
+fi
+
+# Read in the file line by line
+SCANNING=
+PROGRAM=
+
+JS=
+JSBLOCK=
+JSSUBCHANNELS=
+
+while IFS='' read -r line || [[ -n "$line" ]]
+do
+    if [[ $line == SCANNING* ]]
+    then
+        SCANNING=`echo $line | cut -d':' -f3 | sed -e 's/)$//'`
+        if [[ $JSBLOCK != "" ]] && [[ $JSSUBCHANNELS != "" ]]
+        then
+            if [[ $JS != "" ]]
+            then
+                JS="${JS},\n"
+            fi
+            JSBLOCK="${JSBLOCK}${JSSUBCHANNELS}\n\t]\n}"
+            JS="${JS}${JSBLOCK}"
+        fi
+        JSSUBCHANNELS=
+        JSBLOCK=
+    fi
+
+    if [[ $line == PROGRAM* ]]
+    then
+        if [[ $SCANNING != "" ]]
+        then
+            PROGRAMID=`echo $line | cut -d':' -f1 | cut -d' ' -f2`
+            PROGRAM=`echo $line | cut -d':' -f2 | sed -e 's/^[ \t]*//'`
+            #echo $SCANNING
+            #echo $PROGRAMID - $PROGRAM
+            JSBLOCK="{\n\t\"main\" : { \"programId\" : \"${PROGRAMID}\", \"name\" : \"${PROGRAM}\" },\n"
+            JSBLOCK="${JSBLOCK}\t\"channel\" : \"auto:${SCANNING}\",\n"
+            JSBLOCK="${JSBLOCK}\t\"subchannels\" : [\n"
+            SCANNING=
+        else
+            PROGRAMID=`echo $line | cut -d':' -f1 | cut -d' ' -f2`
+            SUBCHANNEL=`echo $line | cut -d':' -f2 | sed -e 's/^[ \t]*//'`
+            #echo "SUBCHANNEL: $SUBCHANNEL"
+            if [[ $JSSUBCHANNELS != "" ]]
+            then
+                JSSUBCHANNELS="${JSSUBCHANNELS},\n"
+            fi
+            JSSUBCHANNELS="${JSSUBCHANNELS}\t\t{ \"programId\" : \"${PROGRAMID}\", \"name\" : \"${SUBCHANNEL}\" }"
+        fi
+    fi
+done < "$CHANNELFILE"
+
+echo -e [$JS]

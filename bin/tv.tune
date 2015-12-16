@@ -1,0 +1,59 @@
+#!/bin/bash
+
+TV=hdhomerun_config
+
+. tv.config
+
+function usage() {
+    echo "$0 [options]"
+    echo ""
+    echo "-d | --device [device-id]     The HDHomerun device ID (hdhomerun_config discover)"
+    echo "-c | --channel [channel-num]  The channel number to tune to (ex: 39)"
+    echo "-p | --program [program-id]   The program id (subchannel) of the channel"
+}
+
+while [ "$1" != "" ]
+do
+    case $1 in
+        -d | --device )
+            shift
+            BOX=$1
+            ;;
+        -c | --channel )
+            shift
+            CHANNEL=$1
+            ;;
+        -p | --program )
+            shift
+            PROGRAM=$1
+            ;;
+        -h | --help )
+            usage
+            exit 0
+            ;;
+        * )
+            echo "Unknown argument: $1"
+            exit 1
+    esac
+    shift
+done
+
+CHANNEL="${CHANNEL-auto:39}"
+
+BOX=${BOX-$BOX0}
+
+# Set the channel
+$TV $BOX set /tuner0/channel $CHANNEL
+
+# Set the subchannel, if specified
+if [[ $PROGRAM != "" ]]
+then
+    $TV $BOX set /tuner0/program $PROGRAM
+fi
+
+# Sleep 2 seconds to allow the channel to tune
+sleep 2
+
+# Check that the channel is set
+$TV $BOX get /tuner0/debug
+

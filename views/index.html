@@ -1,0 +1,142 @@
+<html>
+<head>
+    <script src="hls.js"></script>
+    <title>Live TV</title>
+    <style>
+        #left {
+            float: left;
+        }
+        #channel-list {
+            padding-top: 8px;
+            float: left;
+            height: 400px;
+            overflow: scroll;
+        }
+        .channel {
+            font-family: monospace;
+            font-size: 14pt;
+        }
+        .program:hover {
+            color: blue;
+            cursor: pointer;
+            text-decoration: underline;
+        }
+        .main {
+            font-weight: bold;
+        }
+        .secondary {
+            padding-left: 16px;
+        }
+        #status {
+            margin-left: 8px;
+            height: 16px;
+            width: 16px;
+            border-radius: 16px;
+            cursor: pointer;
+        }
+        .status-on {
+            background: green;
+        }
+        .status-off {
+            background: red;
+        }
+        #video {
+            padding: 8px;
+        }
+    </style>
+</head>
+<body>
+    <div id="status" class="status-off"></div>
+    <div id="left">
+    <video id="video" width="768" height="432" controls>
+        <source src="../stream/stream.m3u8" type="application/x-mpegURL">
+    </video>
+    </div>
+    <div id="channel-list"></div>
+<script src="//ajax.googleapis.com/ajax/libs/jquery/1/jquery.min.js" type="text/javascript"></script>
+<script type="text/javascript">
+    $(document).ready(function() {
+
+        $.ajax({
+            url: "channels.js",
+            success: function(data) {
+                var json = JSON.parse(data);
+                console.log(json.length);
+                console.log(json);
+                var sorted = json.sort(function(l, r) {
+                    var a = parseFloat(l.main.name);
+                    var b = parseFloat(r.main.name);
+                    return ((a < b) ? -1 : ((a > b) ? 1 : 0));
+                });
+                for(var i = 0; i < sorted.length; ++i) {
+                    $('#channel-list').append($(createChannel(sorted[i])));
+                }
+                $('.program').on("click", function() {
+                    var programId = $(this).attr('data');
+                    var channel = $(this).parent('.channel');
+                    var channelId = channel.attr('data');
+                    $.ajax({
+                        url: "tune?ch="+channelId+"&p="+programId
+                    });
+                });
+            }
+        });
+
+        updateStatus();
+        setInterval(updateStatus, 5000);
+
+        if(Hls.isSupported()) {
+            var video = document.getElementById('video');
+            var hls = new Hls();
+            hls.loadSource('../stream/stream.m3u8');
+            hls.attachMedia(video);
+            hls.on(Hls.Events.MANIFEST_PARSED, function() {
+                video.play();
+            });
+        }
+
+        $('#status').on("click", function() {
+            var state = $('#status').hasClass('status-off') ? "yes" : "no";
+            $.ajax({
+                url: "stream?enable="+state,
+                success: function(data) {
+                    updateStatus();
+                }
+            });
+        });
+
+    });
+
+    function createChannel(channel) {
+        var e = '<div class="channel" data="' + channel.channel + '">';
+        e += createProgram(channel.main, "main");
+        for(var i = 0; i < channel.subchannels.length; ++i) {
+            e += createProgram(channel.subchannels[i], "secondary");
+        }
+        e += '</div>';
+        return e;
+    }
+
+    function createProgram(program, className) {
+        var e = '<div class="program ' + className + '" data="' + program.programId + '">';
+        e += program.name;
+        e += '</div>';
+        return e;
+    }
+
+    function updateStatus() {
+        $.ajax({
+            url: "status",
+            success: function(data) {
+                var json = JSON.parse(data);
+                if(json.status == "ON") {
+                    $('#status').removeClass('status-off').addClass('status-on');
+                } else {
+                    $('#status').removeClass('status-on').addClass('status-off');
+                }
+            }
+        });
+    }
+</script>
+</body>
+</html>

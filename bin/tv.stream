@@ -1,0 +1,93 @@
+#!/bin/bash
+
+TV=hdhomerun_config
+
+. tv.config
+
+PIDFILE=$HOME/.tv.stream.pid
+
+KILL=0
+
+function usage() {
+    echo "$0 [options]"
+    echo ""
+    echo "-d | --device [device-id]     The HDHomerun device ID (hdhomerun_config discover)"
+    echo "-k | --kill                   Stop any existing stream process"
+    echo "-s | --status                 Print out ON if the stream is running, OFF otherwise"
+    echo "--start                       Explicit flag to start the stream. Ignored."
+}
+
+function status() {
+    if [[ -f $PIDFILE ]]
+    then
+        echo "ON"
+    else
+        echo "OFF"
+    fi
+    exit 0
+}
+
+while [ "$1" != "" ]
+do
+    case $1 in
+        -d | --device )
+            shift
+            BOX=$1
+            ;;
+        -k | --kill )
+            KILL=1
+            ;;
+        -s | --status)
+            status
+            ;;
+        --start )
+            ;;
+        -h | --help )
+            usage
+            exit 0
+            ;;
+        * )
+            exit 1
+    esac
+    shift
+done
+
+BOX=${BOX-$BOX0}
+
+OUTPUTPATH=${OUTPUTPATH-./stream}
+OUTPUTFILE=$OUTPUTPATH/stream.m3u8
+
+if [[ $KILL == 1 ]]
+then
+    kill -SIGINT `cat $PIDFILE`
+    rm $PIDFILE
+    exit 0
+fi
+
+if [[ -f $PIDFILE ]]
+then
+    echo "PID file already exists!"
+    echo "Remove $PIDFILE and try again"
+    exit 2
+fi
+
+if [[ ! -d $OUTPUTPATH ]]
+then
+    echo "$OUTPUTPATH does not exist!"
+    exit 1
+fi
+
+# Start streaming
+# First line, pull from hdhomerun and pipe to ffmpeg. Specify input format.
+# Second line, specify output codec and compression
+# Third line, specify output type (HLS stream)
+$TV $BOX save /tuner0 - | ffmpeg -f mpegts -i - \
+    -c:v libx264 -preset superfast -b:v 1024k -c:a aac -strict -2 -b:a 128k \
+    -f hls -hls_time 5 -hls_list_size 5 -hls_flags delete_segments $OUTPUTFILE > /dev/null 2>&1 &
+
+PID=$!
+
+echo $PID > $PIDFILE
+
+echo "Done"
+
